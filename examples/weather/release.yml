@@ -1,0 +1,25 @@
+name: Release
+# Replaces the in-repo release jobs build-macos, build, package, publish.
+on:
+  push:
+    tags: ["v*"]
+
+permissions: {}
+
+jobs:
+  release:
+    # The called workflow's own jobs ask for exactly what they need; only its
+    # `publish` job gets the write permissions.
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    uses: jfms7s/opendeck-plugin-ci/.github/workflows/release.yml@REPLACE_WITH_PLUGIN_CI_SHA # vX.Y.Z
+    with:
+      node-version-file: ".nvmrc"
+      audit: "cargo-deny"
+      deny-checks: "advisories sources"
+      check-macos: "scripts/check-binary.sh {bin} --mach-o"
+      aarch64-linux: true
+      check-aarch64: "scripts/check-binary.sh {bin} --runner \"qemu-aarch64 -L /usr/aarch64-linux-gnu\""
+      release-notes: true

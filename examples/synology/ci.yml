@@ -1,0 +1,35 @@
+name: CI
+# Replaces the in-repo jobs test, msrv (incl. msrv-macos), aarch64, macos, advisories, quality.
+# `msrv` must match rust-version in Cargo.toml. Scheduled runs only run `audit`.
+on:
+  push:
+    branches: [master]
+  pull_request:
+  schedule:
+    - cron: "17 6 * * 1"
+
+permissions: {}
+
+jobs:
+  # Reports the checks as `ci / <job>`: those are the names for the
+  # "Protect master" ruleset (see opendeck-plugin-ci's README).
+  ci:
+    permissions:
+      contents: read
+      packages: read # the report-only eng-metrics-lab job
+    uses: jfms7s/opendeck-plugin-ci/.github/workflows/ci.yml@REPLACE_WITH_PLUGIN_CI_SHA # vX.Y.Z
+    with:
+      msrv: "1.88.0"
+      msrv-macos: true
+      release-notes-check: true
+      bundle-lto: ""
+      aarch64: true
+      aarch64-check: "scripts/check-binary.sh aarch64-unknown-linux-gnu {bin}"
+      macos-check: "scripts/check-binary.sh aarch64-apple-darwin {bin}"
+      audit: "cargo-deny"
+      test-extra: |
+        # keyring silently falls back to an in-memory mock store when the OS
+        # backend is missing; fail if the Secret Service backend leaves the graph.
+        cargo tree --locked -e normal --target x86_64-unknown-linux-gnu -i secret-service --depth 0 | grep -q '^secret-service '
+        shellcheck scripts/check-binary.sh
+      macos-extra: "cargo test --locked keyring_round_trip -- --ignored"

@@ -1,0 +1,25 @@
+name: CI
+# Replaces the in-repo jobs test, aarch64, macos, advisories, quality.
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions: {}
+
+jobs:
+  # Reports the checks as `ci / <job>`: those are the names for the
+  # "Protect master" ruleset (see opendeck-plugin-ci's README).
+  ci:
+    permissions:
+      contents: read
+      packages: read # the report-only eng-metrics-lab job
+    uses: jfms7s/opendeck-plugin-ci/.github/workflows/ci.yml@REPLACE_WITH_PLUGIN_CI_SHA # vX.Y.Z
+    with:
+      node-version-file: ".nvmrc"
+      pi-tests: "tests/*.test.mjs"
+      release-notes-check: true
+      aarch64: true
+      macos-check: "scripts/check-binary.sh {bin} --mach-o"
+      audit: "cargo-deny"
+      deny-checks: "advisories sources"

@@ -1,0 +1,413 @@
+name: CI
+# Reusable CI for the opendeck-* plugin repos. Call it from a caller workflow
+# (see README.md and examples/): `uses: jfms7s/opendeck-plugin-ci/.github/workflows/ci.yml@<sha>`.
+#
+# Jobs (a caller job named `ci` reports them as `ci / <job>`):
+#   test      fmt, clippy, tests (with coverage), optional aarch64-apple-darwin clippy, PI tests
+#   bundle    release build + `node build.mjs` + draft-notes check, so a packaging break shows on the PR
+#   msrv, msrv-macos   `cargo check` on the oldest supported Rust (inputs `msrv`, `msrv-macos`)
+#   aarch64   the aarch64 Linux cross build the release ships
+#   macos     native Apple Silicon: clippy, tests, release build, signature/start-up check, bundle
+#   audit     RustSec advisories (cargo-audit or cargo-deny); the only job on a scheduled run
+#   quality   eng-metrics-lab report (report-only)
+on:
+  workflow_call:
+    inputs:
+      rust-toolchain:
+        description: Rust toolchain for fmt, clippy, tests and builds. Bump it deliberately.
+        type: string
+        default: "1.98.1"
+      rust-cache:
+        description: Use Swatinem/rust-cache in the CI jobs (the release workflow never caches).
+        type: boolean
+        default: true
+      node-version:
+        description: Node version for build.mjs and the property-inspector tests.
+        type: string
+        default: "24"
+      node-version-file:
+        description: A version file (e.g. .nvmrc) to use instead of node-version.
+        type: string
+        default: ""
+      apt-packages:
+        description: Space-separated apt packages to install in the test job (e.g. dbus-daemon).
+        type: string
+        default: ""
+      coverage:
+        description: Run the tests under cargo-llvm-cov and upload the lcov fragment for eng-metrics-lab.
+        type: boolean
+        default: true
+      cargo-llvm-cov-version:
+        type: string
+        default: "0.9.1"
+      clippy-darwin:
+        description: Also clippy-check the aarch64-apple-darwin target from the Linux test job.
+        type: boolean
+        default: false
+      pi-tests:
+        description: Glob of the property-inspector tests, run with `node --test` (e.g. tests/*.test.mjs). Empty means none.
+        type: string
+        default: ""
+      test-extra:
+        description: Extra bash run in the test job after the tests (repo-specific checks).
+        type: string
+        default: ""
+      bundle:
+        description: Run the bundle job.
+        type: boolean
+        default: true
+      bundle-target:
+        description: The target the bundle job builds and packages.
+        type: string
+        default: x86_64-unknown-linux-gnu
+      bundle-lto:
+        description: CARGO_PROFILE_RELEASE_LTO for PR release builds ("thin", "off"); empty keeps the Cargo.toml profile. Releases always use the Cargo.toml profile.
+        type: string
+        default: thin
+      release-notes-check:
+        description: Check that scripts/release-body.mjs builds the draft notes from the README checklist.
+        type: boolean
+        default: false
+      msrv:
+        description: Oldest supported Rust (the Cargo.toml rust-version); empty skips the msrv job.
+        type: string
+        default: ""
+      msrv-macos:
+        description: Also run the msrv check on macOS, as its own job.
+        type: boolean
+        default: false
+      aarch64:
+        description: Run the aarch64 Linux job.
+        type: boolean
+        default: false
+      aarch64-check:
+        description: "Command run on the cross-built aarch64 binary (templates: {bin}, {triple}); it is run under qemu. Empty means `cargo check` only, no binary."
+        type: string
+        default: ""
+      macos:
+        description: Run the native macOS job.
+        type: boolean
+        default: true
+      macos-runner:
+        type: string
+        default: macos-15
+      macos-test-args:
+        description: Extra arguments after `cargo test --locked` on macOS (e.g. "-- --show-output").
+        type: string
+        default: ""
+      macos-extra:
+        description: Extra bash run in the macOS job after the tests (repo-specific checks).
+        type: string
+        default: ""
+      macos-check:
+        description: "Command run on the native release binary (template {bin}): signature, arm64, start-up. Empty skips it."
+        type: string
+        default: ""
+      audit:
+        description: "Advisory scan: `cargo-audit`, `cargo-deny` or empty for none."
+        type: string
+        default: ""
+      cargo-audit-version:
+        type: string
+        default: "0.22.2"
+      deny-checks:
+        description: The cargo-deny checks to run, e.g. "advisories" or "advisories sources".
+        type: string
+        default: advisories
+      quality:
+        description: "Run the report-only eng-metrics-lab job (needs `packages: read` from the caller)."
+        type: boolean
+        default: true
+
+permissions: {}
+
+jobs:
+  test:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master (2026-10-01)
+        with:
+          toolchain: ${{ inputs.rust-toolchain }}
+          components: ${{ inputs.coverage && 'rustfmt, clippy, llvm-tools-preview' || 'rustfmt, clippy' }}
+          targets: ${{ inputs.clippy-darwin && 'aarch64-apple-darwin' || '' }}
+      - if: inputs.rust-cache
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - if: inputs.apt-packages != ''
+        name: Install apt packages
+        env:
+          PACKAGES: ${{ inputs.apt-packages }}
+        run: |
+          # shellcheck disable=SC2086 # a list of packages on purpose
+          sudo apt-get update && sudo apt-get install -y $PACKAGES
+      - if: inputs.pi-tests != ''
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ inputs.node-version-file == '' && inputs.node-version || '' }}
+          node-version-file: ${{ inputs.node-version-file }}
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - if: inputs.coverage
+        uses: taiki-e/install-action@68a389c788b2cd04016ce8c80ee23b80d2ab3d68 # v2.88.1
+        with:
+          tool: cargo-llvm-cov@${{ inputs.cargo-llvm-cov-version }}
+      # Replaces `cargo test`: the same tests, instrumented. The fragment waits in
+      # RUNNER_TEMP until every test in the job has passed (see the collect step).
+      - if: inputs.coverage
+        name: Test with coverage (eng-metrics-lab)
+        run: cargo llvm-cov --locked --lcov --output-path "$RUNNER_TEMP/coverage-rust.lcov"
+      - if: ${{ !inputs.coverage }}
+        run: cargo test --locked
+      # Type-checks the macOS code from Linux (no C dependencies there, so no
+      # SDK is needed): a Linux-only change that breaks macOS fails fast.
+      - if: inputs.clippy-darwin
+        run: cargo clippy --target aarch64-apple-darwin --all-targets --locked -- -D warnings
+      - if: inputs.pi-tests != ''
+        name: Property inspector tests
+        env:
+          TESTS: ${{ inputs.pi-tests }}
+        run: |
+          # shellcheck disable=SC2086 # the glob is expanded by the shell on purpose
+          node --test $TESTS
+      - if: inputs.test-extra != ''
+        name: Repo-specific checks
+        env:
+          SCRIPT: ${{ inputs.test-extra }}
+        run: bash -euo pipefail -c "$SCRIPT"
+      # Only reached when every step above passed, so a red test leaves no fragment.
+      - if: inputs.coverage
+        name: Collect coverage fragment (eng-metrics-lab)
+        run: |
+          mkdir -p .quality
+          mv "$RUNNER_TEMP/coverage-rust.lcov" .quality/coverage-rust.lcov
+      - if: inputs.coverage
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-fragments
+          path: .quality/coverage-rust.lcov
+          include-hidden-files: true
+          retention-days: 7
+
+  # Builds and packages the way the release does, so a packaging break (Cargo
+  # and manifest versions, CodePaths naming, a broken README marker) shows on
+  # the pull request, not on a pushed tag.
+  bundle:
+    if: github.event_name != 'schedule' && inputs.bundle
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master (2026-10-01)
+        with:
+          toolchain: ${{ inputs.rust-toolchain }}
+          targets: ${{ inputs.bundle-target }}
+      - if: inputs.rust-cache
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Release build
+        env:
+          TARGET: ${{ inputs.bundle-target }}
+          LTO: ${{ inputs.bundle-lto }}
+        # Thin LTO (or none) keeps PR builds quick; the release workflow keeps
+        # Cargo.toml's profile for what ships.
+        run: |
+          if [ -n "$LTO" ]; then
+            export CARGO_PROFILE_RELEASE_LTO="$LTO" CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16
+          fi
+          cargo build --release --locked --target "$TARGET"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ inputs.node-version-file == '' && inputs.node-version || '' }}
+          node-version-file: ${{ inputs.node-version-file }}
+      - name: Metadata checks and bundle
+        env:
+          TARGET: ${{ inputs.bundle-target }}
+        run: |
+          node build.mjs --check-only
+          node build.mjs --zip "$TARGET"
+      - if: inputs.release-notes-check
+        name: Draft release notes build from the README checklist
+        run: node scripts/release-body.mjs > /dev/null
+
+  msrv:
+    if: github.event_name != 'schedule' && inputs.msrv != ''
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master (2026-10-01)
+        with:
+          toolchain: ${{ inputs.msrv }}
+      - if: inputs.rust-cache
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: cargo check --all-targets --locked
+
+  # The same check on macOS, as its own job rather than a matrix leg: a matrix
+  # would rename the `msrv` check that a ruleset requires.
+  msrv-macos:
+    if: github.event_name != 'schedule' && inputs.msrv != '' && inputs.msrv-macos
+    runs-on: ${{ inputs.macos-runner }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master (2026-10-01)
+        with:
+          toolchain: ${{ inputs.msrv }}
+      - if: inputs.rust-cache
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: cargo check --all-targets --locked
+
+  # The release ships an aarch64 Linux binary: check it on every PR so an
+  # aarch64-only break shows before a tag.
+  aarch64:
+    if: github.event_name != 'schedule' && inputs.aarch64
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master (2026-10-01)
+        with:
+          toolchain: ${{ inputs.rust-toolchain }}
+          targets: aarch64-unknown-linux-gnu
+      - if: inputs.rust-cache
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Install the aarch64 C toolchain (and qemu to start the binary)
+        env:
+          QEMU: ${{ inputs.aarch64-check != '' && 'qemu-user' || '' }}
+        run: |
+          # shellcheck disable=SC2086 # QEMU is empty or one package name
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu $QEMU
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
+      - if: inputs.aarch64-check == ''
+        run: cargo check --locked --target aarch64-unknown-linux-gnu
+      - if: inputs.aarch64-check != ''
+        name: Build the aarch64 binary and start it under qemu
+        env:
+          CHECK: ${{ inputs.aarch64-check }}
+        run: |
+          cargo build --release --locked --target aarch64-unknown-linux-gnu
+          bin="target/aarch64-unknown-linux-gnu/release/$(sed -n 's/^name = "\(.*\)"/\1/p' Cargo.toml | head -n1)"
+          check="${CHECK//\{bin\}/$bin}"
+          bash -euo pipefail -c "${check//\{triple\}/aarch64-unknown-linux-gnu}"
+
+  # The release ships an Apple Silicon binary: lint, test and package it
+  # natively, with the release's signature and start-up checks.
+  macos:
+    if: github.event_name != 'schedule' && inputs.macos
+    runs-on: ${{ inputs.macos-runner }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The [package] name is the first `name =` line in Cargo.toml.
+      - name: Binary name from Cargo.toml
+        run: echo "BIN=$(sed -n 's/^name = "\(.*\)"/\1/p' Cargo.toml | head -n1)" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master (2026-10-01)
+        with:
+          toolchain: ${{ inputs.rust-toolchain }}
+          components: clippy
+          targets: aarch64-apple-darwin
+      - if: inputs.rust-cache
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ inputs.node-version-file == '' && inputs.node-version || '' }}
+          node-version-file: ${{ inputs.node-version-file }}
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - name: Tests
+        env:
+          TEST_ARGS: ${{ inputs.macos-test-args }}
+        run: |
+          # shellcheck disable=SC2086 # extra cargo test arguments, split on purpose
+          cargo test --locked $TEST_ARGS
+      - if: inputs.macos-extra != ''
+        name: Repo-specific checks
+        env:
+          SCRIPT: ${{ inputs.macos-extra }}
+        run: bash -euo pipefail -c "$SCRIPT"
+      - if: inputs.pi-tests != ''
+        name: Property inspector tests
+        env:
+          TESTS: ${{ inputs.pi-tests }}
+        run: |
+          # shellcheck disable=SC2086 # the glob is expanded by the shell on purpose
+          node --test $TESTS
+      - name: Release build
+        env:
+          LTO: ${{ inputs.bundle-lto }}
+        run: |
+          if [ -n "$LTO" ]; then
+            export CARGO_PROFILE_RELEASE_LTO="$LTO" CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16
+          fi
+          cargo build --release --locked
+      - if: inputs.macos-check != ''
+        name: Check it is a signed arm64 binary that starts
+        env:
+          CHECK: ${{ inputs.macos-check }}
+        run: bash -euo pipefail -c "${CHECK//\{bin\}/target/release/$BIN}"
+      - run: node build.mjs aarch64-apple-darwin
+
+  audit:
+    if: inputs.audit != ''
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - if: inputs.audit == 'cargo-audit'
+        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master (2026-10-01)
+        with:
+          toolchain: ${{ inputs.rust-toolchain }}
+      - if: inputs.audit == 'cargo-audit'
+        env:
+          VERSION: ${{ inputs.cargo-audit-version }}
+        run: cargo install cargo-audit --locked --version "$VERSION"
+      - if: inputs.audit == 'cargo-audit'
+        run: cargo audit
+      - if: inputs.audit == 'cargo-deny'
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          arguments: --all-features --locked
+          command: check ${{ inputs.deny-checks }}
+
+  # eng-metrics-lab (report-only): duplication, complexity and dead code; the collector picks up the artifact.
+  quality:
+    needs: [test]
+    if: ${{ !cancelled() && inputs.quality && github.event_name != 'schedule' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: coverage-fragments
+          path: .quality
+        continue-on-error: true
+      - name: Code quality (report-only)
+        uses: jfms7s/eng-metrics-lab/action@v0
+        continue-on-error: true
