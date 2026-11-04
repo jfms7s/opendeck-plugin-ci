@@ -1,0 +1,29 @@
+name: CI
+# Replaces the in-repo jobs test, macos, bundle, audit, quality. Scheduled runs only run `audit`.
+on:
+  push:
+    branches: [master]
+  pull_request:
+  schedule:
+    - cron: "17 6 * * 1"
+
+permissions: {}
+
+jobs:
+  # Reports the checks as `ci / <job>`: those are the names for the
+  # "Protect master" ruleset (see opendeck-plugin-ci's README).
+  ci:
+    permissions:
+      contents: read
+      packages: read # the report-only eng-metrics-lab job
+    uses: jfms7s/opendeck-plugin-ci/.github/workflows/ci.yml@REPLACE_WITH_PLUGIN_CI_SHA # vX.Y.Z
+    with:
+      apt-packages: "dbus-daemon"
+      clippy-darwin: true
+      pi-tests: "tests/*.test.mjs"
+      release-notes-check: true
+      macos-check: "scripts/check-macos-binary.sh {bin}"
+      audit: "cargo-deny"
+      macos-extra: |
+        cargo test --locked coreaudio_snapshot_does_not_panic -- --nocapture
+        cargo test --locked coreaudio_round_trip -- --ignored --nocapture

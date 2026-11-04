@@ -1,0 +1,22 @@
+name: CI
+# Switches opendeck-claude-usage to the shared CI. Replaces the in-repo jobs test, aarch64, macos.
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions: {}
+
+jobs:
+  # Reports the checks as `ci / <job>`: those are the names for the
+  # "Protect master" ruleset (see opendeck-plugin-ci's README).
+  ci:
+    permissions:
+      contents: read
+      packages: read # the report-only eng-metrics-lab job
+    uses: jfms7s/opendeck-plugin-ci/.github/workflows/ci.yml@REPLACE_WITH_PLUGIN_CI_SHA # vX.Y.Z
+    with:
+      pi-tests: "tests/pi/*.test.mjs"
+      aarch64: true
+      macos: true
+      macos-check: "scripts/check-macos-bin.sh {bin}"

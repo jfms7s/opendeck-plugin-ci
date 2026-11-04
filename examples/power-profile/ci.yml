@@ -1,0 +1,26 @@
+name: CI
+# Replaces the in-repo ci.yml jobs and advisories.yml (delete that file: its weekly
+# schedule and the advisory scan live here now). Scheduled runs only run `audit`.
+on:
+  push:
+    branches: [master]
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1"
+
+permissions: {}
+
+jobs:
+  # Reports the checks as `ci / <job>`: those are the names for the
+  # "Protect master" ruleset (see opendeck-plugin-ci's README).
+  ci:
+    permissions:
+      contents: read
+      packages: read # the report-only eng-metrics-lab job
+    uses: jfms7s/opendeck-plugin-ci/.github/workflows/ci.yml@REPLACE_WITH_PLUGIN_CI_SHA # vX.Y.Z
+    with:
+      apt-packages: "dbus-daemon"
+      macos: false
+      bundle-lto: "off"
+      release-notes-check: true
+      audit: "cargo-deny"
