@@ -1,9 +1,14 @@
 name: CI
-# Switches opendeck-claude-usage to the shared CI. Replaces the in-repo jobs test, aarch64, macos.
+# Switches opendeck-claude-usage to the shared CI. Replaces the in-repo jobs test, aarch64, macos
+# and advisories.yml (delete that file: its weekly schedule and the advisory scan live here now;
+# scheduled runs only run `audit`). The old msrv job was dropped from master already.
 on:
   push:
     branches: [master]
   pull_request:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
 
 permissions: {}
 
@@ -20,3 +25,5 @@ jobs:
       aarch64: true
       macos: true
       macos-check: "scripts/check-macos-bin.sh {bin}"
+      audit: "cargo-deny"
+      deny-checks: "advisories sources"

@@ -1,10 +1,14 @@
 name: CI
-# Replaces the in-repo jobs test, msrv, macos, msrv-macos, audit, quality.
+# Replaces the in-repo jobs test, msrv, macos, msrv-macos, audit, quality and audit.yml (delete that
+# file: its weekly schedule lives here now; scheduled runs only run `audit`).
 # `msrv` must match rust-version in Cargo.toml.
 on:
   push:
     branches: [master]
   pull_request:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
 
 permissions: {}
 
