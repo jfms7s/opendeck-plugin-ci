@@ -1,0 +1,12 @@
+# Keeps the SHA-pinned actions in the reusable workflows moving through
+# reviewed PRs. The callers pin this repo by SHA, so a merged bump here reaches
+# a plugin only when its own Dependabot (or you) moves its pin.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      github-actions:
+        patterns: ["*"]
