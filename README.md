@@ -10,7 +10,10 @@ Shared scaffolding for the `opendeck-*` plugin repos (`-claude-usage`, `-focus-l
 | `.github/workflows/release.yml` | Reusable release: draft GitHub release with the bundle, `SHA256SUMS` and a build-provenance attestation. |
 | `examples/<repo>/{ci,release}.yml` | The caller workflows for each plugin repo, ready to copy (replace `REPLACE_WITH_PLUGIN_CI_SHA`). |
 | `examples/dependabot.yml` | The `dependabot.yml` for a plugin repo (cargo and github-actions, monthly, grouped). |
+| `.github/workflows/check.yml` | This repo's own checks on push and PR: `scripts/lint.sh` (actionlint, shellcheck) and the `build.mjs` self test. |
 | `scripts/check-drift.sh` | Compares every plugin repo with the canonical files. |
+| `scripts/lint.sh` | actionlint (workflows and the example callers) and shellcheck, with the tools on `PATH`. |
+| `tests/build.test.mjs` | Self test of `build.mjs`'s consistency checks against fixture plugin repos (`node --test tests/`). |
 
 ## Adopting it in a plugin repo
 
@@ -34,10 +37,31 @@ A job that calls a reusable workflow reports each called job as `<caller job> / 
 | `ci / macos` | `macos: true` (default) | native Apple Silicon: clippy, tests, PI tests, release build, `macos-check` (signature, arm64, start-up), `node build.mjs aarch64-apple-darwin` |
 | `ci / audit` | `audit` set; the only job on a scheduled run | `cargo audit` or `cargo deny check <deny-checks>` |
 | `ci / quality` | `quality: true` (default) | report-only eng-metrics-lab |
+| `ci / gate` | PRs, pushes (not scheduled runs) | fails when a job listed in `required-jobs` was skipped or did not succeed; see "Skipped is green" |
 
 Scheduled runs (a caller `schedule:` trigger) run only `audit`. The release workflow reports `release / verify`, `release / build-linux`, `release / build-macos`, `release / package` and `release / publish`.
 
-The caller job must grant `contents: read` and `packages: read` (the quality job reads a package), and the release caller job `contents: write`, `id-token: write`, `attestations: write`; the called jobs each request only what they need, and only `publish` writes. Everything is SHA-pinned.
+The caller job must grant `contents: read` and `packages: read` (the quality job reads a package), and the release caller job `contents: write`, `id-token: write`, `attestations: write`; the called jobs each request only what they need, and only `publish` writes.
+
+Every action is pinned by commit SHA with a `# vX.Y.Z` comment that Dependabot can bump (`dtolnay/rust-toolchain` has only a moving `v1` tag, so that is the comment), and every job runs on `ubuntu-24.04` or the `macos-runner`. Tools are pinned by version, not by hash: `cargo-audit` and `cargo-llvm-cov` (inputs, installed from crates.io or `taiki-e/install-action`), `cargo-deny` (fixed by the SHA of `cargo-deny-action`, which has no version input), and the Rust toolchain. `check.yml` downloads actionlint and shellcheck at a pinned version and verifies their sha256; bump those by hand.
+
+## Skipped is green
+
+GitHub counts a skipped required check as passing. Every job that an input can switch off (`bundle`, `msrv`, `msrv-macos`, `aarch64`, `macos`, `audit`, `quality`) is skipped when its input is unset, so a caller edit such as `aarch64: false` or a dropped `msrv:` would remove that protection without a red check. Two defences:
+
+- Set `required-jobs` in the caller to the jobs its ruleset requires. `ci / gate` then fails if any of them was skipped or failed (an unknown name fails too). The examples set it. Requiring `ci / gate` in the ruleset as well makes the list itself the single place that has to be edited.
+- The inputs that must stay set for each repo's required checks:
+
+| Repo | Required checks | Inputs that must stay set |
+| --- | --- | --- |
+| claude-usage | `ci / test`, `ci / macos`, `ci / aarch64`, `ci / bundle` | `aarch64: true`, `macos` not `false`, `bundle` not `false` |
+| focus-launcher | `ci / test`, `ci / msrv`, `ci / macos`, `ci / msrv-macos`, `ci / bundle` | `msrv` (equal to `rust-version`), `msrv-macos: true`, `macos` and `bundle` not `false` |
+| power-profile | `ci / test`, `ci / bundle` | `bundle` not `false` |
+| synology | `ci / test`, `ci / msrv`, `ci / aarch64`, `ci / macos`, `ci / msrv-macos`, `ci / bundle` | `msrv`, `msrv-macos: true`, `aarch64: true`, `macos` and `bundle` not `false` |
+| utilities | `ci / test`, `ci / bundle`, `ci / macos` | `macos` and `bundle` not `false` |
+| weather | `ci / test`, `ci / aarch64`, `ci / macos`, `ci / bundle` | `aarch64: true`, `macos` and `bundle` not `false` |
+
+`ci / bundle` holds the release build, the `build.mjs` checks and the release-notes check that used to live inside `test`, so requiring only `ci / test` no longer protects those. Inside a job, the optional steps are gated the same way and are skipped silently when their input is empty: `macos-check`, `aarch64-check`, `pi-tests`, `release-notes-check`, `test-extra`, `macos-extra`. `audit` and `quality` are not required by any ruleset today.
 
 ## `ci.yml` inputs
 
@@ -57,9 +81,10 @@ The caller job must grant `contents: read` and `packages: read` (the quality job
 | `msrv`, `msrv-macos` | empty, `false` | MSRV toolchain (empty skips the job); also on macOS. Keep it equal to `rust-version` |
 | `aarch64`, `aarch64-check` | `false`, empty | the aarch64 job; command (templates `{bin}`, `{triple}`) run on the built binary under qemu |
 | `macos`, `macos-runner` | `true`, `macos-15` | the native macOS job |
-| `macos-test-args`, `macos-extra`, `macos-check` | empty | extra `cargo test` arguments; extra bash; command (template `{bin}`) for the signature and start-up check |
+| `macos-test-args`, `macos-extra`, `macos-check` | empty | extra `cargo test` arguments; extra bash (its step times out after 5 minutes, e.g. a Keychain prompt); command (template `{bin}`) for the signature and start-up check |
 | `audit`, `cargo-audit-version`, `deny-checks` | empty, `0.22.2`, `advisories` | advisory scan: `cargo-audit` or `cargo-deny` |
 | `quality` | `true` | the report-only job |
+| `required-jobs` | empty | jobs `ci / gate` requires to have run and succeeded (see "Skipped is green") |
 
 ## `release.yml` inputs
 
@@ -71,7 +96,7 @@ The caller job must grant `contents: read` and `packages: read` (the quality job
 | `macos`, `macos-runner`, `macos-test` | `true`, `macos-15`, `false` | build the macOS binary natively; run its tests there |
 | `check-macos` | empty | command (template `{bin}`) run on the native binary; `package` also checks it is an arm64 Mach-O |
 | `aarch64-linux` | `false` | cross-build the aarch64 Linux binary |
-| `check-x86_64`, `check-aarch64` | empty | commands (template `{bin}`) run on the Linux binaries (the aarch64 one under qemu) |
+| `check-x86_64`, `check-aarch64` | empty | commands (template `{bin}`) run on the Linux binaries (the aarch64 one under qemu). A binary whose check is unset is built and architecture-checked but never started: claude-usage sets no `check-x86_64` or `check-aarch64`, so its Linux binaries are not run in the release (its CI `aarch64` job only runs `cargo check`) |
 | `release-notes` | `false` | the draft's notes come from `scripts/release-body.mjs` |
 
 The release needs `Cargo.toml` `version` = `assets/manifest.json` `Version` = the tag without its `v`; `build.mjs --release --tag` fails otherwise. Every `CodePaths` target must be built (`macos`/`aarch64-linux` must match the manifest). The assets are `<bin>.streamDeckPlugin` and `SHA256SUMS`, the release is a draft, and nothing here publishes it.
@@ -92,13 +117,17 @@ node build.mjs --check-only          only the consistency checks
   aliases: --require-all = --all, --check-version = --check-only
 ```
 
-The consistency checks: Cargo and manifest versions agree (and match the tag), every action UUID is `<plugin uuid>.<action>`, every literal `const UUID` in `src/` that is under the plugin's namespace is a manifest action, `CodePaths` file names are `<bin>-<triple>`, and `CodePathLin`/`CodePathMac`/`CodePathWin` point into `CodePaths`.
+The consistency checks: Cargo and manifest versions agree (and match the tag), every action UUID is `<plugin uuid>.<action>`, every literal `const UUID` in `src/` that starts with the project family prefix (the first two segments of the plugin UUID, `com.jfms7s.`) is a manifest action, so a typo in the plugin segment is an error while a test double such as `test.echo` is ignored, `CodePaths` file names are `<bin>-<triple>`, and `CodePathLin`/`CodePathMac`/`CodePathWin` point into `CodePaths`.
 
 ## Keeping the copies identical
 
 ```
-scripts/check-drift.sh            # reads origin/master of each opendeck-* checkout next to this repo
-scripts/check-drift.sh --ref HEAD # or any ref; --root <dir> if the checkouts are elsewhere
+scripts/check-drift.sh                      # fetches, then reads origin/master of each opendeck-* checkout next to this repo
+scripts/check-drift.sh --ref HEAD           # or any ref of the plugin repos; --root <dir> if the checkouts are elsewhere
+scripts/check-drift.sh --canonical-ref HEAD # compare against this checkout's HEAD instead of origin/master (before merging a change)
+scripts/check-drift.sh --no-fetch           # skip the fetches
 ```
 
-It prints the sha256 prefix of every plugin's `build.mjs` and `pi.css` beside the canonical ones, which reusable workflows each repo calls and at which SHA, and exits 1 on any difference or if the callers pin more than one plugin-ci commit. To change a shared file: change it here, then copy it to the six repos in one PR each.
+It fetches this repo and every plugin repo first (a failed fetch is an error), then prints the sha256 prefix of every plugin's `build.mjs` and `pi.css` beside the canonical ones, both read from git refs rather than working trees, which reusable workflows each repo calls and at which SHA. It exits 1 on any difference, on a deleted or renamed `build.mjs` or `pi.css` (shown as `missing`; only repos in the script's `NO_PI` list, today power-profile, may lack `pi.css`), or if the callers pin more than one plugin-ci commit. To change a shared file: change it here, then copy it to the six repos in one PR each.
+
+`scripts/lint.sh` runs actionlint and shellcheck locally; `node --test tests/` runs the `build.mjs` self test. `check.yml` runs both on every push and PR.
