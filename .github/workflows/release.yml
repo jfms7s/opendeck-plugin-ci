@@ -89,7 +89,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master (2026-10-01)
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master (2026-10-01)
         with:
           toolchain: ${{ inputs.rust-toolchain }}
           components: rustfmt, clippy
@@ -146,7 +146,7 @@ jobs:
       # The [package] name is the first `name =` line in Cargo.toml.
       - name: Binary name from Cargo.toml
         run: echo "BIN=$(sed -n 's/^name = "\(.*\)"/\1/p' Cargo.toml | head -n1)" >> "$GITHUB_ENV"
-      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master (2026-10-01)
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master (2026-10-01)
         with:
           toolchain: ${{ inputs.rust-toolchain }}
           targets: aarch64-apple-darwin
@@ -182,7 +182,7 @@ jobs:
       # The [package] name is the first `name =` line in Cargo.toml.
       - name: Binary name from Cargo.toml
         run: echo "BIN=$(sed -n 's/^name = "\(.*\)"/\1/p' Cargo.toml | head -n1)" >> "$GITHUB_ENV"
-      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master (2026-10-01)
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master (2026-10-01)
         with:
           toolchain: ${{ inputs.rust-toolchain }}
           targets: ${{ inputs.aarch64-linux && 'x86_64-unknown-linux-gnu,aarch64-unknown-linux-gnu' || 'x86_64-unknown-linux-gnu' }}
