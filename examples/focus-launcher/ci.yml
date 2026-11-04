@@ -21,6 +21,8 @@ jobs:
       packages: read # the report-only eng-metrics-lab job
     uses: jfms7s/opendeck-plugin-ci/.github/workflows/ci.yml@REPLACE_WITH_PLUGIN_CI_SHA # vX.Y.Z
     with:
+      # The jobs the ruleset requires: fails if an input above switches one off (skipped counts as green).
+      required-jobs: "test msrv macos msrv-macos bundle"
       rust-cache: false
       clippy-darwin: true
       pi-tests: "tests/*.test.mjs"

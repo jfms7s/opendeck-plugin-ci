@@ -10,6 +10,9 @@ name: CI
 #   macos     native Apple Silicon: clippy, tests, release build, signature/start-up check, bundle
 #   audit     RustSec advisories (cargo-audit or cargo-deny); the only job on a scheduled run
 #   quality   eng-metrics-lab report (report-only)
+#   gate      fails when a job named in `required-jobs` was skipped or did not succeed (a skipped
+#             required check is green to GitHub, so an input that switches a job off would otherwise
+#             silently remove its protection)
 on:
   workflow_call:
     inputs:
@@ -118,6 +121,10 @@ on:
         description: "Run the report-only eng-metrics-lab job (needs `packages: read` from the caller)."
         type: boolean
         default: true
+      required-jobs:
+        description: "Space-separated jobs (test bundle msrv msrv-macos aarch64 macos audit) that must run and succeed. A job switched off by an input is skipped, and a skipped required check counts as passing; the gate job fails instead. Set it to the jobs the repo's ruleset requires."
+        type: string
+        default: ""
 
 permissions: {}
 
@@ -131,7 +138,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master (2026-10-01)
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: ${{ inputs.rust-toolchain }}
           components: ${{ inputs.coverage && 'rustfmt, clippy, llvm-tools-preview' || 'rustfmt, clippy' }}
@@ -205,7 +212,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master (2026-10-01)
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: ${{ inputs.rust-toolchain }}
           targets: ${{ inputs.bundle-target }}
@@ -245,7 +252,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master (2026-10-01)
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: ${{ inputs.msrv }}
       - if: inputs.rust-cache
@@ -263,7 +270,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master (2026-10-01)
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: ${{ inputs.msrv }}
       - if: inputs.rust-cache
@@ -281,7 +288,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master (2026-10-01)
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: ${{ inputs.rust-toolchain }}
           targets: aarch64-unknown-linux-gnu
@@ -291,8 +298,8 @@ jobs:
         env:
           QEMU: ${{ inputs.aarch64-check != '' && 'qemu-user' || '' }}
         run: |
-          # shellcheck disable=SC2086 # QEMU is empty or one package name
           sudo apt-get update
+          # shellcheck disable=SC2086 # QEMU is empty or one package name
           sudo apt-get install -y gcc-aarch64-linux-gnu $QEMU
           echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
       - if: inputs.aarch64-check == ''
@@ -321,7 +328,7 @@ jobs:
       # The [package] name is the first `name =` line in Cargo.toml.
       - name: Binary name from Cargo.toml
         run: echo "BIN=$(sed -n 's/^name = "\(.*\)"/\1/p' Cargo.toml | head -n1)" >> "$GITHUB_ENV"
-      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master (2026-10-01)
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: ${{ inputs.rust-toolchain }}
           components: clippy
@@ -341,6 +348,8 @@ jobs:
           cargo test --locked $TEST_ARGS
       - if: inputs.macos-extra != ''
         name: Repo-specific checks
+        # A hung macOS check (e.g. a Keychain prompt) must not hold the runner for the job's 6 hours.
+        timeout-minutes: 5
         env:
           SCRIPT: ${{ inputs.macos-extra }}
         run: bash -euo pipefail -c "$SCRIPT"
@@ -376,7 +385,7 @@ jobs:
         with:
           persist-credentials: false
       - if: inputs.audit == 'cargo-audit'
-        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master (2026-10-01)
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: ${{ inputs.rust-toolchain }}
       - if: inputs.audit == 'cargo-audit'
@@ -385,6 +394,7 @@ jobs:
         run: cargo install cargo-audit --locked --version "$VERSION"
       - if: inputs.audit == 'cargo-audit'
         run: cargo audit
+      # The action has no version input: its commit pins cargo-deny (0.20.2 at this pin).
       - if: inputs.audit == 'cargo-deny'
         uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
@@ -395,7 +405,7 @@ jobs:
   quality:
     needs: [test]
     if: ${{ !cancelled() && inputs.quality && github.event_name != 'schedule' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: read
@@ -409,5 +419,31 @@ jobs:
           path: .quality
         continue-on-error: true
       - name: Code quality (report-only)
-        uses: jfms7s/eng-metrics-lab/action@v0
+        uses: jfms7s/eng-metrics-lab/action@961b196f18ec58c1fc42cdd0e7e000094a39f545 # v0.4.0
         continue-on-error: true
+
+  # A required status check that is skipped counts as passing. `required-jobs`
+  # turns "this job must run" into a failure, so flipping an input such as
+  # `aarch64: false` or `bundle: false` cannot quietly drop a protected check.
+  gate:
+    needs: [test, bundle, msrv, msrv-macos, aarch64, macos, audit]
+    if: ${{ always() && github.event_name != 'schedule' }}
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - name: Every required job ran and succeeded
+        env:
+          REQUIRED: ${{ inputs.required-jobs }}
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          status=0
+          for job in $REQUIRED; do
+            result=$(jq -r --arg job "$job" '.[$job].result // "unknown job"' <<<"$NEEDS")
+            if [ "$result" = success ]; then
+              echo "ok: $job"
+            else
+              echo "::error::required job '$job' is $result (a job switched off by an input is skipped: check the caller's inputs)"
+              status=1
+            fi
+          done
+          exit $status

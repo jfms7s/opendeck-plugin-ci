@@ -5,9 +5,11 @@ name: Release
 #
 # The tagged commit is verified (tag = Cargo.toml = manifest.json version, fmt,
 # clippy, tests, PI tests, advisory scan), built (Linux on Ubuntu, the Apple
-# Silicon binary on a macOS runner, each started once), packaged by build.mjs
-# into <bin>.streamDeckPlugin with SHA256SUMS, attested, and attached to a
-# *draft* GitHub release. Nothing here publishes it: the owner runs the README's
+# Silicon binary on a macOS runner), and each binary is started once only if its
+# check input is set (check-x86_64, check-aarch64, check-macos); a binary with
+# no check is built, architecture-checked and shipped without ever being run.
+# The bundle is packaged by build.mjs into <bin>.streamDeckPlugin with
+# SHA256SUMS, attested, and attached to a *draft* GitHub release. Nothing here publishes it: the owner runs the README's
 # smoke checklist on the draft and publishes by hand. A release is never
 # visible without its asset, and the only job with a write token runs no
 # project code.
@@ -89,7 +91,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master (2026-10-01)
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: ${{ inputs.rust-toolchain }}
           components: rustfmt, clippy
@@ -124,6 +126,7 @@ jobs:
         run: cargo install cargo-audit --locked --version "$VERSION"
       - if: inputs.audit == 'cargo-audit'
         run: cargo audit
+      # The action has no version input: its commit pins cargo-deny (0.20.2 at this pin).
       - if: inputs.audit == 'cargo-deny'
         uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
@@ -146,7 +149,7 @@ jobs:
       # The [package] name is the first `name =` line in Cargo.toml.
       - name: Binary name from Cargo.toml
         run: echo "BIN=$(sed -n 's/^name = "\(.*\)"/\1/p' Cargo.toml | head -n1)" >> "$GITHUB_ENV"
-      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master (2026-10-01)
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: ${{ inputs.rust-toolchain }}
           targets: aarch64-apple-darwin
@@ -182,7 +185,7 @@ jobs:
       # The [package] name is the first `name =` line in Cargo.toml.
       - name: Binary name from Cargo.toml
         run: echo "BIN=$(sed -n 's/^name = "\(.*\)"/\1/p' Cargo.toml | head -n1)" >> "$GITHUB_ENV"
-      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master (2026-10-01)
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: ${{ inputs.rust-toolchain }}
           targets: ${{ inputs.aarch64-linux && 'x86_64-unknown-linux-gnu,aarch64-unknown-linux-gnu' || 'x86_64-unknown-linux-gnu' }}
