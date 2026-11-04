@@ -13,7 +13,7 @@ Shared scaffolding for the `opendeck-*` plugin repos (`-claude-usage`, `-focus-l
 | `.github/workflows/check.yml` | This repo's own checks on push and PR: `scripts/lint.sh` (actionlint, shellcheck) and the `build.mjs` self test. |
 | `scripts/check-drift.sh` | Compares every plugin repo with the canonical files. |
 | `scripts/lint.sh` | actionlint (workflows and the example callers) and shellcheck, with the tools on `PATH`. |
-| `tests/build.test.mjs` | Self test of `build.mjs`'s consistency checks against fixture plugin repos (`node --test tests/`). |
+| `tests/build.test.mjs` | Self test of `build.mjs`'s consistency checks against fixture plugin repos (`node --test tests/*.test.mjs`). |
 
 ## Adopting it in a plugin repo
 
@@ -130,4 +130,4 @@ scripts/check-drift.sh --no-fetch           # skip the fetches
 
 It fetches this repo and every plugin repo first (a failed fetch is an error), then prints the sha256 prefix of every plugin's `build.mjs` and `pi.css` beside the canonical ones, both read from git refs rather than working trees, which reusable workflows each repo calls and at which SHA. It exits 1 on any difference, on a deleted or renamed `build.mjs` or `pi.css` (shown as `missing`; only repos in the script's `NO_PI` list, today power-profile, may lack `pi.css`), or if the callers pin more than one plugin-ci commit. To change a shared file: change it here, then copy it to the six repos in one PR each.
 
-`scripts/lint.sh` runs actionlint and shellcheck locally; `node --test tests/` runs the `build.mjs` self test. `check.yml` runs both on every push and PR.
+`scripts/lint.sh` runs actionlint and shellcheck locally; `node --test tests/*.test.mjs` runs the `build.mjs` self test. `check.yml` runs both on every push and PR.

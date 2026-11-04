@@ -1,4 +1,4 @@
-// Self test for build.mjs's consistency checks (`node --test tests/`).
+// Self test for build.mjs's consistency checks (`node --test tests/*.test.mjs`).
 // Each case builds a throwaway plugin repo and runs `node build.mjs --check-only` in it.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";

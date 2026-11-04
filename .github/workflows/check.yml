@@ -50,5 +50,5 @@ jobs:
         with:
           node-version: "24"
       - name: build.mjs consistency checks (fixture plugin repos)
-        run: node --test tests/
+        run: node --test tests/*.test.mjs
       - run: node --check build.mjs
