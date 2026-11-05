@@ -293,6 +293,9 @@ jobs:
   # attests and attaches what `package` produced, as a draft the owner publishes.
   publish:
     needs: package
+    # `package` runs when the optional macOS build is skipped; without a status
+    # function a skipped job anywhere upstream would skip this one too.
+    if: ${{ !cancelled() && needs.package.result == 'success' }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write
