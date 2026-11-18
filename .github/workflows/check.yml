@@ -5,7 +5,7 @@ name: Check
 # pinned version and verified against a sha256, so bump them by hand.
 on:
   push:
-    branches: [master]
+    branches: [main, master]
   pull_request:
 
 permissions: {}
