@@ -122,9 +122,9 @@ The consistency checks: Cargo and manifest versions agree (and match the tag), e
 ## Keeping the copies identical
 
 ```
-scripts/check-drift.sh                      # fetches, then reads origin/master of each opendeck-* checkout next to this repo
+scripts/check-drift.sh                      # fetches, then reads origin/main of each opendeck-* checkout next to this repo
 scripts/check-drift.sh --ref HEAD           # or any ref of the plugin repos; --root <dir> if the checkouts are elsewhere
-scripts/check-drift.sh --canonical-ref HEAD # compare against this checkout's HEAD instead of origin/master (before merging a change)
+scripts/check-drift.sh --canonical-ref HEAD # compare against this checkout's HEAD instead of origin/main (before merging a change)
 scripts/check-drift.sh --no-fetch           # skip the fetches
 ```
 

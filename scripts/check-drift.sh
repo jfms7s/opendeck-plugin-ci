@@ -6,10 +6,10 @@
 #
 #   --root           the directory holding the opendeck-* checkouts (default: the
 #                    parent of this repo's checkout)
-#   --ref            what to read in each plugin repo (default: origin/master, so a
+#   --ref            what to read in each plugin repo (default: origin/main, so a
 #                    stale or dirty working tree can't hide drift)
 #   --canonical-ref  what to read in this repo for build.mjs and pi.css (default:
-#                    origin/master; use HEAD to check a change before it is merged)
+#                    origin/main; use HEAD to check a change before it is merged)
 #   --no-fetch       skip the `git fetch` of this repo and of every plugin repo
 #                    that is done first (a failed fetch is an error, since the
 #                    comparison would be against a stale ref)
@@ -31,8 +31,8 @@ NO_PI=(opendeck-power-profile)
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 root=""
-ref=origin/master
-canonical_ref=origin/master
+ref=origin/main
+canonical_ref=origin/main
 fetch=1
 repos=()
 while [ $# -gt 0 ]; do
