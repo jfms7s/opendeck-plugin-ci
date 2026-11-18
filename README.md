@@ -19,7 +19,7 @@ Shared scaffolding for the `opendeck-*` plugin repos (`-claude-usage`, `-focus-l
 
 1. Copy `build.mjs` to the repo root and `pi.css` to `assets/propertyInspector/pi.css` (a plain copy; `scripts/check-drift.sh` is what keeps them honest).
 2. Copy `examples/<repo>/ci.yml` and `release.yml` over `.github/workflows/`, and set the `@` to the plugin-ci commit you want (keep the `# vX.Y.Z` comment when it is a tagged release, so Dependabot can bump it).
-3. In the same window, edit the repo's "Protect master" ruleset so the required checks are the new names (see below). Until the ruleset is edited every PR, Dependabot's included, waits for checks that no longer exist.
+3. In the same window, update the required checks so they are the new names (see below). The ruleset ("Protect main") is managed by terraform-provision's `github` root (`github/rulesets.tf`, required checks per repo in `github/inventory.auto.tfvars`), so this means a PR there, applied before or with the workflow change. Until the required checks are updated every PR, Dependabot's included, waits for checks that no longer exist.
 4. Delete workflows the shared ones replace (power-profile's `advisories.yml`).
 
 A private `opendeck-plugin-ci` can only be called by other repos of the same account if its Actions access allows it (Settings, Actions, General, "Access": "Accessible from repositories owned by the user"); making it public needs no setting. Reusable workflows from a public repo are callable by anyone.
